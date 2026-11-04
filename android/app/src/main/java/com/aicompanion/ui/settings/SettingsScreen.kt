@@ -3593,6 +3593,30 @@ fun SettingsScreen(
 
                 AnimatedVisibility(visible = expandedSection == "功能入口") {
                     Column(modifier = Modifier.fillMaxWidth()) {
+                // 世界书管理：独立世界书 JSON 导入与条目编辑（酒馆 lorebook 兼容）
+                StradustCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable { onNavigate("world_book") }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(imageVector = Icons.Default.MenuBook, contentDescription = null, tint = StradustTheme.colors.primary, modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = "世界书管理", color = StradustTheme.colors.textPrimary, fontSize = 15.sp)
+                            Text(
+                                text = "导入酒馆世界书 JSON（lorebook），查看/编辑触发关键词条目",
+                                color = StradustTheme.colors.textMuted,
+                                fontSize = 11.sp,
+                            )
+                        }
+                        Icon(imageVector = Icons.Default.ChevronRight, contentDescription = null, tint = StradustTheme.colors.textMuted)
+                    }
+                }
                 // 技能库：所有 App 的 UI 树技能与手写技能的统一入口
                 StradustCard(
                     modifier = Modifier
