@@ -122,7 +122,7 @@ fun WorldBookScreen(onBackClick: () -> Unit = {}) {
     val worldInfos = remember(refreshTick) { manager.getAllWorldInfos() }
 
     Box(modifier = Modifier.fillMaxSize().background(StradustTheme.colors.background)) {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(modifier = Modifier.fillMaxSize().padding(bottom = 96.dp)) {
             item { StradustTopBar(title = "世界书", onBackClick = onBackClick) }
             item { Spacer(Modifier.height(12.dp)) }
 
@@ -416,9 +416,8 @@ private fun WorldBookItem(
                 } else {
                     Spacer(Modifier.height(8.dp))
                     LazyColumn(
-                        modifier = Modifier.heightIn(max = 300.dp),
+                        modifier = Modifier.heightIn(max = 520.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
-                        userScrollEnabled = false,
                     ) {
                         items(
                             count = worldInfo.entries.size,
