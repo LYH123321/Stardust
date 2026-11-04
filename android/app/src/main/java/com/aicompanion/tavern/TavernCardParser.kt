@@ -303,8 +303,40 @@ object TavernCardParser {
      */
     fun parseStandaloneWorldBook(jsonStr: String): Pair<String, List<BookEntry>> {
         val root = JSONObject(jsonStr)
+
+        // 兼容：完整角色卡 JSON（spec: chara_card_v2/v3）——世界书嵌在 data.character_book
+        if (root.optString("spec", "").startsWith("chara_card")) {
+            val card = parseFromJson(jsonStr).getOrNull()
+                ?: return Pair("", emptyList())
+            return Pair(
+                card.characterBookName.ifBlank { "${card.name}的世界书" },
+                card.characterBookEntries,
+            )
+        }
+
+        // 兼容：角色卡数据层（直接就是 data 对象，带 name/description/character_book）
+        if (root.has("character_book") && root.has("name") && !root.has("entries")) {
+            val book = root.optJSONObject("character_book")
+            val entries = mutableListOf<BookEntry>()
+            val bookName0 = book?.optString("name", "") ?: ""
+            val eArr = book?.optJSONArray("entries")
+            if (eArr != null) {
+                for (i in 0 until eArr.length()) {
+                    parseWbEntry(eArr.getJSONObject(i))?.let { entries.add(it) }
+                }
+            }
+            return Pair(bookName0.ifBlank { root.optString("name", "") }, entries)
+        }
+
         var bookName = root.optString("name", "")
         val entriesOut = mutableListOf<BookEntry>()
+        // 兼容：嵌套单一世界书 {"entries": {...}, "name": ...} 已由下面处理；
+        // ST 世界书也可能是 {"originalData": {...}} 包裹
+        val innerRoot = root.optJSONObject("originalData") ?: root
+        if (innerRoot !== root) {
+            val (n2, e2) = parseStandaloneWorldBook(innerRoot.toString())
+            if (e2.isNotEmpty()) return Pair(bookName.ifBlank { n2 }, e2)
+        }
         val entriesVal = root.opt("entries") ?: return Pair(bookName, emptyList())
         when (entriesVal) {
             is JSONArray -> {
