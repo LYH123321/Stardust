@@ -106,6 +106,30 @@ fun WorldBookScreen(onBackClick: () -> Unit = {}) {
         }.start()
     }
 
+    // 独立预设 JSON 导入（酒馆「导出预设」格式）
+    val importPresetLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        Thread {
+            try {
+                val jsonStr = context.contentResolver.openInputStream(uri)?.use {
+                    it.bufferedReader().readText()
+                } ?: throw java.io.IOException("无法读取文件")
+                val (name, blocks) = com.aicompanion.tavern.TavernPresetManager.parse(jsonStr)
+                    ?: throw IllegalArgumentException("未识别为酒馆预设 JSON（缺少 prompts 字段）")
+                com.aicompanion.tavern.TavernPresetManager.save(context, name, blocks)
+                refreshTick++
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "已导入预设「$name」，共${blocks.size}个块", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "导入失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
     // 对话框状态
     var showAddWorldDialog by remember { mutableStateOf(false) }
     var editingWorldInfo by remember { mutableStateOf<WorldInfo?>(null) }
@@ -148,6 +172,12 @@ fun WorldBookScreen(onBackClick: () -> Unit = {}) {
                     )
                     Spacer(Modifier.width(8.dp))
                     StradustButton(
+                        text = "导入预设",
+                        onClick = { importPresetLauncher.launch(arrayOf("application/json", "text/*")) },
+                        size = ButtonSize.SMALL,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    StradustButton(
                         text = "添加世界书",
                         onClick = {
                             editingWorldInfo = null
@@ -160,6 +190,70 @@ fun WorldBookScreen(onBackClick: () -> Unit = {}) {
 
             item { Spacer(Modifier.height(12.dp)) }
 
+            // 预设（酒馆 Preset）管理区
+            item {
+                val preset = remember(refreshTick) { com.aicompanion.tavern.TavernPresetManager.load(context) }
+                StradustCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (preset == null) "预设（未导入）" else "预设：${preset.first}",
+                            color = StradustTheme.colors.textPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (preset != null) {
+                            Text(
+                                text = "清除",
+                                color = StradustTheme.colors.error,
+                                fontSize = 13.sp,
+                                modifier = Modifier.clickable {
+                                    com.aicompanion.tavern.TavernPresetManager.clear(context)
+                                    refreshTick++
+                                    Toast.makeText(context, "预设已清除", Toast.LENGTH_SHORT).show()
+                                },
+                            )
+                        }
+                    }
+                    if (preset == null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "点击上方「导入预设」导入酒馆预设 JSON，启用的块将注入每次对话开头",
+                            color = StradustTheme.colors.textMuted,
+                            fontSize = 12.sp,
+                        )
+                    } else {
+                        preset.second.forEach { block ->
+                            if (block.isMarker) return@forEach
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = block.name,
+                                    color = StradustTheme.colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Switch(
+                                    checked = block.enabled,
+                                    onCheckedChange = { on ->
+                                        val updated = preset.second.map {
+                                            if (it.identifier == block.identifier) it.copy(enabled = on) else it
+                                        }
+                                        com.aicompanion.tavern.TavernPresetManager.save(context, preset.first, updated)
+                                        refreshTick++
+                                    },
+                                    modifier = Modifier.size(36.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            item { Spacer(Modifier.height(12.dp)) }
             if (worldInfos.isEmpty()) {
                 item {
                     StradustCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {

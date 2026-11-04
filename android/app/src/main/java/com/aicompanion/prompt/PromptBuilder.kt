@@ -163,6 +163,12 @@ object PromptBuilder {
         }
     }
 
+    /** 预设（酒馆 Preset）注入前缀。context 为 null 时返回空。 */
+    fun presetPrefix(context: android.content.Context?): String {
+        if (context == null) return ""
+        return try { com.aicompanion.tavern.TavernPresetManager.buildPrefix(context) } catch (e: Exception) { "" }
+    }
+
     fun buildPersonaFull(identity: IdentityBlock): String {
         val profile = identity.profile
         val structured = profile != null && profile.hasContent()
@@ -196,6 +202,8 @@ object PromptBuilder {
 
     fun buildChatPrompt(identity: IdentityBlock, emotion: String, action: String, memories: List<String>, context: Context, subjectivityBlock: String?): String {
         return buildString {
+            val presetPrefix = presetPrefix(context)
+            if (presetPrefix.isNotBlank()) { append(presetPrefix); append("\n\n") }
             append(buildPersonaFull(identity))
             append("\n情绪：$emotion。动作：$action。")
             // 注入主体性状态 (情绪+驱动力+疲劳+风格指令)

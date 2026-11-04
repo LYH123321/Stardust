@@ -2560,6 +2560,8 @@ class MainActivity : ComponentActivity(), StradustDestinations.AppHost {
         val identity = com.aicompanion.prompt.PromptBuilder.buildIdentity(this@MainActivity, activePersonaId)
 
         val fullPrompt = buildString {
+            val presetPrefix = com.aicompanion.prompt.PromptBuilder.presetPrefix(this@MainActivity)
+            if (presetPrefix.isNotBlank()) { append(presetPrefix); append("\n\n") }
             append(com.aicompanion.prompt.PromptBuilder.buildPersonaFull(identity))
 
             if (identity.userNickname.isNotBlank()) {

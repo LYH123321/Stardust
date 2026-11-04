@@ -466,6 +466,8 @@ class IlinkPollingService : Service() {
 
                 // ===== 人格全量 prompt（镜像 MainActivity.getPersonaInfo）=====
                 val pPrompt = buildString {
+                    val presetPrefix = com.aicompanion.prompt.PromptBuilder.presetPrefix(this@IlinkPollingService)
+                    if (presetPrefix.isNotBlank()) { append(presetPrefix); append("\n\n") }
                     append(com.aicompanion.prompt.PromptBuilder.buildPersonaFull(identity))
 
                     // 称呼（与主聊天一致：优先人格里设定的昵称，其次历史称呼，最后提示用工具取名）
