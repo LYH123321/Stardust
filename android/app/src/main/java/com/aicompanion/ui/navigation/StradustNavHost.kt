@@ -349,6 +349,7 @@ object StradustDestinations {
         // ===== Live2D 桥接（ChatScreen + SettingsScreen） =====
         /** Live2D 是否启用 */
         fun isLive2dEnabled(): Boolean = false
+        fun isLive2dOverlayMode(): Boolean = false
         /** 获取 Live2DWebView 视图（懒创建，供 AndroidView 嵌入） */
         fun getLive2DView(): android.view.View? = null
         /** 加载/切换 Live2D 模型（按 active_model_path 重新加载） */
@@ -560,6 +561,7 @@ fun StradustNavHost(
                 onDeleteMessage = { msg -> host?.deleteMessage(msg) },
                 onNavigate = { route -> navController.navigate(route) { launchSingleTop = true } },
                 live2dEnabled = host?.isLive2dEnabled() ?: false,
+                live2dOverlayMode = host?.isLive2dOverlayMode() ?: false,
                 live2dViewProvider = { host?.getLive2DView() },
                 onLive2dResume = { host?.resumeLive2D() },
                 onLive2dPause = { host?.pauseLive2D() },

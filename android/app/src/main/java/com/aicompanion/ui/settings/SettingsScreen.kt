@@ -3249,6 +3249,15 @@ fun SettingsScreen(
                             sm.live2dEnabled = it
                         },
                     )
+                    if (live2dEnabled) {
+                        SettingSwitchRow(
+                            icon = Icons.Default.Face,
+                            title = "模型浮层模式",
+                            subtitle = "开：模型盖在气泡上可拖动（挡字）；关：模型垫底不挡字",
+                            checked = sm.live2dOverlayMode,
+                            onCheckedChange = { sm.live2dOverlayMode = it },
+                        )
+                    }
                     // Live2D 模型切换（仅在启用时显示）
                     if (live2dEnabled && live2dModels.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))

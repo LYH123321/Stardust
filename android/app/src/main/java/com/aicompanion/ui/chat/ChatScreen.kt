@@ -125,6 +125,8 @@ fun ChatScreen(
     // === Live2D 桥接 ===
     /** Live2D 是否启用 */
     live2dEnabled: Boolean = false,
+    /** Live2D 浮层模式：true=模型在气泡上方（可拖动/触摸，会挡字）；false=垫底不挡字（默认） */
+    live2dOverlayMode: Boolean = false,
     /** 获取 Live2D 视图（懒创建） */
     live2dViewProvider: () -> android.view.View? = { null },
     /** 进入聊天页时恢复 Live2D */
@@ -219,8 +221,21 @@ fun ChatScreen(
             )
         }
 
+        // ===== Live2D 模型层（垫底模式：在消息列表下面，不挡字，像 Airi） =====
+        // 可通过设置切回「浮层模式」（模型在气泡上方，可拖动/触摸）。
+        // 垫底模式下模型触摸事件会被消息列表拦截，正好避免误触模型。
+        if (live2dEnabled && live2dOverlayMode) {
+            val live2dModifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxSize()
+            Live2DLayer(
+                viewProvider = live2dViewProvider,
+                onResume = onLive2dResume,
+                onPause = onLive2dPause,
+                modifier = live2dModifier,
+            )
+        }
         Column(modifier = Modifier.fillMaxSize()) {
-            // ===== 顶部状态栏 =====
             StradustTopBar(
                 title = aiName,
                 subtitle = "$daysLabel · $weatherIcon",
@@ -371,9 +386,9 @@ fun ChatScreen(
 
         }
 
-        // ===== Live2D 模型层（在气泡上方，长按可拖动） =====
-        // 默认屏幕中间，长按 100ms 进入拖动模式（Live2DCoordinator.setupTouch 实现）
-        if (live2dEnabled) {
+        // ===== Live2D 模型层（浮层模式：在气泡上方，长按可拖动） =====
+        // 垫底模式下此处不渲染（模型已在消息列表下方）。
+        if (live2dEnabled && live2dOverlayMode) {
             // 尺寸跟随容器（fillMaxSize），不再锁定成"键盘未弹出时的高度"。
             //
             // 之前锁高度是为了避免键盘弹出时模型跳一下，但副作用更糟：View 高度仍是全屏，

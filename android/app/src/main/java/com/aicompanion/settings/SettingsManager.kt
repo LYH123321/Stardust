@@ -448,6 +448,10 @@ class SettingsManager(context: Context) {
             prefs.edit().putBoolean("live2d_enabled", value).apply()
             onLive2DEnabledChanged?.invoke(value)
         }
+    /** Live2D 浮层模式：true=模型盖在气泡上（可拖动，挡字）；false=模型垫底不挡字 */
+    var live2dOverlayMode: Boolean
+        get() = prefs.getBoolean("live2d_overlay_mode", false)
+        set(value) { prefs.edit().putBoolean("live2d_overlay_mode", value).apply() }
 
     // 开机自启动（默认开启）
     var autoStart: Boolean

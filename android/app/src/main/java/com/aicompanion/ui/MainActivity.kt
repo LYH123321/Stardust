@@ -5430,6 +5430,7 @@ class MainActivity : ComponentActivity(), StradustDestinations.AppHost {
     private val live2dModelManager by lazy { com.aicompanion.live2d.ModelManager(this@MainActivity) }
 
     override fun isLive2dEnabled(): Boolean = settingsManager?.live2dEnabled == true
+    override fun isLive2dOverlayMode(): Boolean = settingsManager?.live2dOverlayMode == true
 
     override fun getLive2DView(): android.view.View? {
         if (!isLive2dEnabled()) return null
