@@ -215,8 +215,9 @@ class ModelManagerActivity : Activity() {
                     putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed"))
                 }
                 "vrm" -> {
+                    // 不做 MIME 过滤：ColorOS 文件管理器给 .vrm 标的 MIME 不统一，
+                    // 过滤后文件会被灰掉选不了。全部可见，靠扩展名判断。
                     type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "model/gltf-binary"))
                 }
                 else -> {
                     type = "*/*"
