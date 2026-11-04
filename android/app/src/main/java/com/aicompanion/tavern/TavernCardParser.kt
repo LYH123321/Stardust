@@ -241,6 +241,30 @@ object TavernCardParser {
     }
 
     /**
+     * V2 spec 的 position 字段兼容：既可能是数字（0/1），也可能是字符串
+     * （"before_char"/"after_char"，部分导出工具如量角器卡生成器用字符串形式）
+     */
+    private fun parsePositionAny(entry: org.json.JSONObject, ext: org.json.JSONObject?): String {
+        // 先尝试字符串形式
+        val strPos = entry.optString("position", "")
+        if (strPos == "before_char" || strPos == "after_char") return strPos
+        if (ext != null) {
+            val extStr = ext.optString("position", "")
+            if (extStr == "before_char" || extStr == "after_char") return extStr
+        }
+        // 数字形式（ST 内部 0=before, 1=after）
+        val num = when {
+            entry.has("position") && !entry.isNull("position") -> entry.optInt("position", -1)
+            ext?.has("position") == true -> ext.optInt("position", -1)
+            else -> -1
+        }
+        // optInt 对非数字字符串返回 0 而非 fallback，需排除：字符串但非合法值时视作未知
+        val raw = if (entry.has("position") && !entry.isNull("position")) entry.opt("position") else ext?.opt("position")
+        if (raw is String && raw != "0" && raw != "1" && raw != "before_char" && raw != "after_char") return "before_char"
+        return mapTavernPosition(num)
+    }
+
+    /**
      * 将解析出的酒馆世界书条目转成星尘原生 WorldInfo（可直接 addWorldInfo 挂到角色）
      * 参考 SillyTavern character_book spec 与星尘 WorldInfoEntry 字段一一对应
      */
@@ -582,12 +606,7 @@ object TavernCardParser {
                             extensions?.optInt("insertion_order", 100) ?: 100)
                         val enabledFlag = entry.optBoolean("enabled", true) &&
                             extensions?.optBoolean("enabled", true) != false
-                        val position = when {
-                            entry.has("position") -> mapTavernPosition(entry.optInt("position", -1))
-                            extensions?.has("position") == true ->
-                                mapTavernPosition(extensions.optInt("position", -1))
-                            else -> "before_char"
-                        }
+                        val position = parsePositionAny(entry, extensions)
                         val caseSensitive = extensions?.optBoolean("case_sensitive", false) ?: false
                         bookEntries.add(
                             BookEntry(
