@@ -182,7 +182,7 @@ class ModelManagerActivity : Activity() {
     }
 
     private fun showImportDialog() {
-        val options = arrayOf("选择模型文件夹（推荐）", "选择 .zip 压缩包", "选择 .model3.json 文件")
+        val options = arrayOf("选择模型文件夹（推荐）", "选择 .zip 压缩包", "选择 .model3.json 文件", "选择 .vrm 模型（3D）")
         android.app.AlertDialog.Builder(this)
             .setTitle("导入模型")
             .setItems(options) { _, which ->
@@ -190,6 +190,7 @@ class ModelManagerActivity : Activity() {
                     0 -> openFolderPicker()
                     1 -> openFilePicker("zip")
                     2 -> openFilePicker("json")
+                    3 -> openFilePicker("vrm")
                 }
             }
             .show()
@@ -210,8 +211,12 @@ class ModelManagerActivity : Activity() {
             addCategory(Intent.CATEGORY_OPENABLE)
             when (fileType) {
                 "zip" -> {
-                    type = "application/zip"
+                    type = "*/*"
                     putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/zip", "application/x-zip-compressed"))
+                }
+                "vrm" -> {
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "model/gltf-binary"))
                 }
                 else -> {
                     type = "*/*"
@@ -357,13 +362,46 @@ class ModelManagerActivity : Activity() {
         )
         mm.setActiveModel(name)
         mm.addModel(model)
-
         // 导入完成立刻体检：这是用户最需要即时反馈的时刻，
         // 等他自己发现"模型是黑的"再来问就晚了。
         val report = runCatching { ModelHealthChecker.check(targetDir) }.getOrNull()
         runOnUiThread {
             loadModels()
             if (report != null) showHealthDialog(this, name, report)
+        }
+    }
+    /** 导入单个 .vrm 文件为 3D 模型 */
+    private fun importVrmModel(uri: Uri, fileName: String, targetDir: File) {
+        try {
+            val dst = File(targetDir, fileName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(dst).use { output -> input.copyTo(output) }
+            } ?: throw java.io.IOException("无法读取文件")
+            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            prefs.edit().putString("active_model_path", dst.absolutePath).apply()
+            val mm = modelManager ?: return
+            val modelId = "vrm_" + fileName.substringBeforeLast(".").hashCode()
+            mm.addModel(
+                Live2DModel(
+                    id = modelId,
+                    name = fileName.substringBeforeLast("."),
+                    description = "VRM 3D 模型（导入）",
+                    modelPath = dst.absolutePath,
+                    texturePath = "",
+                    physicsPath = "",
+                    motionPath = "",
+                    version = "VRM",
+                    sizeMB = dst.length() / 1024f / 1024f,
+                    isActive = true,
+                )
+            )
+            mm.setActiveModel(modelId)
+            runOnUiThread { loadModels() }
+            Toast.makeText(this, "VRM 模型导入成功：${fileName}", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Log.e(TAG, "importVrmModel error", e)
+            Toast.makeText(this, "VRM 导入失败: ${e.message}", Toast.LENGTH_LONG).show()
+            targetDir.deleteRecursively()
         }
     }
 
@@ -384,6 +422,9 @@ class ModelManagerActivity : Activity() {
 
             if (ext == "zip") {
                 importZip(uri, targetDir)
+            } else if (ext == "vrm") {
+                importVrmModel(uri, fileName, targetDir)
+                return
             } else if (ext == "json") {
                 importJsonModel(uri, fileName, targetDir)
                 return
@@ -607,16 +648,17 @@ class ModelManagerActivity : Activity() {
                     val existingModels = mm.getAllModels()
                     val alreadyRegistered = existingModels.any { it.modelPath == modelFile.absolutePath }
                     if (!alreadyRegistered) {
+                        val isVrm = modelFile.name.lowercase().endsWith(".vrm")
                         val model = Live2DModel(
-                            id = dirName,
-                            name = dirName,
-                            description = "扫描发现模型",
+                            id = if (isVrm) "vrm_" + modelFile.nameWithoutExtension.hashCode() else dirName,
+                            name = if (isVrm) modelFile.nameWithoutExtension else dirName,
+                            description = if (isVrm) "VRM 3D 模型（扫描发现）" else "扫描发现模型",
                             modelPath = modelFile.absolutePath,
                             texturePath = "",
                             physicsPath = "",
                             motionPath = "",
-                            version = detectModelVersion(modelFile),
-                            sizeMB = modelDir.walkTopDown().filter { it.isFile }.sumOf { it.length() } / 1024f / 1024f,
+                            version = if (isVrm) "VRM" else detectModelVersion(modelFile),
+                            sizeMB = modelFile.length() / 1024f / 1024f,
                             isActive = true
                         )
                         mm.addModel(model)
@@ -627,6 +669,33 @@ class ModelManagerActivity : Activity() {
 
                 if (!targetDir.exists()) {
                     targetDir.mkdirs()
+                    if (modelFile.name.lowercase().endsWith(".vrm")) {
+                        // VRM 单文件：直接拷贝并注册
+                        val dstFile = File(targetDir, modelFile.name)
+                        FileInputStream(modelFile).use { input ->
+                            FileOutputStream(dstFile).use { output -> input.copyTo(output) }
+                        }
+                        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                        prefs.edit().putString("active_model_path", dstFile.absolutePath).apply()
+                        val mm = modelManager ?: continue
+                        val modelId = "vrm_" + modelFile.nameWithoutExtension.hashCode()
+                        mm.addModel(
+                            Live2DModel(
+                                id = modelId,
+                                name = modelFile.nameWithoutExtension,
+                                description = "VRM 3D 模型（扫描导入）",
+                                modelPath = dstFile.absolutePath,
+                                texturePath = "",
+                                physicsPath = "",
+                                motionPath = "",
+                                version = "VRM",
+                                sizeMB = dstFile.length() / 1024f / 1024f,
+                                isActive = true,
+                            )
+                        )
+                        mm.setActiveModel(modelId)
+                        continue
+                    }
                     modelDir.walkTopDown().filter { it.isFile }.forEach { srcFile ->
                         val relPath = srcFile.absolutePath.substring(modelDir.absolutePath.length).trimStart('/', '\\')
                         val dstFile = File(targetDir, relPath)
@@ -670,6 +739,11 @@ class ModelManagerActivity : Activity() {
     private fun scanDirectoryRecursive(dir: File, found: MutableList<File>) {
         try {
             dir.listFiles()?.forEach { file ->
+                if (file.isFile && file.name.lowercase().endsWith(".vrm")) {
+                    // VRM 模型：单个 .vrm 文件即可
+                    found.add(file)
+                    return@forEach
+                }
                 if (file.isFile && (file.name.endsWith(".model3.json") || file.name.endsWith(".model.json"))) {
                     val moc3File = File(file.parentFile, file.name.replace(".model3.json", ".moc3").replace(".model.json", ".moc"))
                     val hasMoc = moc3File.exists() || file.parentFile?.listFiles()?.any {
