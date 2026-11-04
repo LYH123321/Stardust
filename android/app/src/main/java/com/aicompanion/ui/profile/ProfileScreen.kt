@@ -604,7 +604,7 @@ fun ProfileScreen(
                             modifier = Modifier.align(Alignment.CenterHorizontally))
                         Spacer(Modifier.height(8.dp))
                         Image(
-                            painter = painterResource(id = R.drawable.donate_qr),
+                            painter = painterResource(id = R.drawable.donate_image),
                             contentDescription = "支持作者收款码",
                             modifier = Modifier
                                 .align(Alignment.CenterHorizontally)
