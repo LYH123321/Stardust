@@ -224,7 +224,8 @@ fun ChatScreen(
         // ===== Live2D 模型层（垫底模式：在消息列表下面，不挡字，像 Airi） =====
         // 可通过设置切回「浮层模式」（模型在气泡上方，可拖动/触摸）。
         // 垫底模式下模型触摸事件会被消息列表拦截，正好避免误触模型。
-        if (live2dEnabled && live2dOverlayMode) {
+        // 垫底模式（默认）：浮层开关关闭时在此渲染模型层
+        if (live2dEnabled && !live2dOverlayMode) {
             val live2dModifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxSize()
