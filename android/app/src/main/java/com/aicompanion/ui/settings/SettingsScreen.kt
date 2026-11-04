@@ -454,12 +454,20 @@ fun SettingsScreen(
                         val persona = com.aicompanion.persona.Persona(
                             id = java.util.UUID.randomUUID().toString(),
                             name = card.name.ifBlank { "未命名角色" },
-                            prompt = card.systemPrompt.ifBlank { card.description },
-                            personality = card.personality,
-                            description = card.description,
-                        )
-                        personaMgr.addPersona(persona)
-                        // === 世界书导入（增强）：条目完整转为原生 WorldInfo 并挂到角色卡 ===
+                            prompt = buildString {
+                            append(card.systemPrompt.ifBlank { card.description })
+                            if (card.postHistoryInstructions.isNotBlank()) {
+                                append("\n\n[输出规则]\n").append(card.postHistoryInstructions)
+                            }
+                            if (card.mesExample.isNotBlank()) {
+                                append("\n\n[对话示例]\n").append(card.mesExample)
+                            }
+                        },
+                        personality = card.personality,
+                        description = card.description,
+                    )
+                    personaMgr.addPersona(persona)
+                    // === 世界书导入（增强）：条目完整转为原生 WorldInfo 并挂到角色卡 ===
                         var worldInfoToast = ""
                         if (card.characterBookEntries.isNotEmpty()) {
                             try {
@@ -531,7 +539,15 @@ fun SettingsScreen(
                             val persona = com.aicompanion.persona.Persona(
                                 id = java.util.UUID.randomUUID().toString(),
                                 name = card.name.ifBlank { "未命名角色" },
-                                prompt = card.systemPrompt.ifBlank { card.description },
+                                                            prompt = buildString {
+                                    append(card.systemPrompt.ifBlank { card.description })
+                                    if (card.postHistoryInstructions.isNotBlank()) {
+                                        append("\n\n[输出规则]\n").append(card.postHistoryInstructions)
+                                    }
+                                    if (card.mesExample.isNotBlank()) {
+                                        append("\n\n[对话示例]\n").append(card.mesExample)
+                                    }
+                                },
                                 personality = card.personality,
                                 description = card.description,
                             )

@@ -44,6 +44,7 @@ object TavernCardParser {
         val mesExample: String,
         val creatorNotes: String,
         val systemPrompt: String,
+        val postHistoryInstructions: String = "",
         val tags: List<String>,
         val characterBookEntries: List<BookEntry>,
         val characterBookName: String = "",
@@ -554,6 +555,7 @@ object TavernCardParser {
         val mesExample = data.optString("mes_example", "")
         val creatorNotes = data.optString("creator_notes", "")
         val systemPrompt = data.optString("system_prompt", "")
+        val postHistory = data.optString("post_history_instructions", "")
 
         // tags
         val tags = mutableListOf<String>()
@@ -660,6 +662,7 @@ object TavernCardParser {
             mesExample = mesExample,
             creatorNotes = creatorNotes,
             systemPrompt = systemPrompt,
+            postHistoryInstructions = postHistory,
             tags = tags,
             characterBookEntries = bookEntries,
             characterBookName = bookName,
