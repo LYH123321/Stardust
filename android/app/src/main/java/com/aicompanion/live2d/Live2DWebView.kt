@@ -122,7 +122,7 @@ class Live2DWebView @JvmOverloads constructor(
                 }
             }
 
-            if (uri.startsWith("js/") || uri.startsWith("css/")) {
+            if (uri.startsWith("js/") || uri.startsWith("css/") || uri.startsWith("vrmstage/")) {
                 try {
                     val input = context.assets.open(uri)
                     val mime = serverMime(uri)
@@ -134,6 +134,21 @@ class Live2DWebView @JvmOverloads constructor(
                 } catch (e: Exception) {
                     addLog("Server asset miss: $uri")
                     return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Asset not found: $uri")
+                }
+            }
+            // VRM 活动模型目录（vrm_active/model.vrm）
+            if (uri.startsWith("vrm_active/")) {
+                try {
+                    val decodedUri = URLDecoder.decode(uri, "UTF-8")
+                    val file = File(modelCacheDir, decodedUri)
+                    if (file.exists() && file.isFile && file.canonicalPath.startsWith(modelCacheDir.canonicalPath)) {
+                        val fis = file.inputStream()
+                        return newFixedLengthResponse(Response.Status.OK, serverMime(decodedUri), fis, file.length()).apply {
+                            addHeader("Access-Control-Allow-Origin", "*")
+                        }
+                    }
+                } catch (e: Exception) {
+                    addLog("Server vrm_active error: ${e.message}")
                 }
             }
 
@@ -202,6 +217,7 @@ class Live2DWebView @JvmOverloads constructor(
                 p.endsWith(".jpg") || p.endsWith(".jpeg") -> "image/jpeg"
                 p.endsWith(".webp") -> "image/webp"
                 p.endsWith(".moc3") || p.endsWith(".moc") -> "application/octet-stream"
+                p.endsWith(".vrm") || p.endsWith(".glb") || p.endsWith(".gltf") -> "model/gltf-binary"
                 p.endsWith(".mp3") -> "audio/mpeg"
                 p.endsWith(".ogg") -> "audio/ogg"
                 p.endsWith(".wav") -> "audio/wav"
@@ -526,6 +542,7 @@ class Live2DWebView @JvmOverloads constructor(
 
     fun loadLive2DModelFromPath(modelJsonAbsolutePath: String) {
         if (isDestroyed) return
+        isVrmMode = false
         coroutineScope.launch(Dispatchers.IO) {
             try {
                 addLog("Loading model: $modelJsonAbsolutePath")
@@ -1663,8 +1680,65 @@ class Live2DWebView @JvmOverloads constructor(
         lastEmotionTime = now
         post {
             try {
-                evaluateJavascript("window.setLive2DEmotion && window.setLive2DEmotion('${emotion.name.lowercase()}')", null)
+                if (isVrmMode) {
+                    evaluateJavascript("window.StageAPI && StageAPI.setEmotion('${emotion.name}')", null)
+                } else {
+                    evaluateJavascript("window.setLive2DEmotion && window.setLive2DEmotion('${emotion.name.lowercase()}')", null)
+                }
             } catch (e: Exception) { AppLogger.e("Live2D", "setEmotion: ${e.message}") }
+        }
+    }
+
+    /** VRM 模式标记：加载 VRM 舞台后为 true，情绪/动作走 StageAPI */
+    var isVrmMode = false
+        private set
+
+    /**
+     * 加载 VRM 模型（.vrm 文件）：加载内置 VRM 舞台页，再通过 StageAPI.loadModel 注入模型。
+     * 复用本地 NanoHTTPD 服务器提供模型文件访问。
+     */
+    fun loadVrmModelFromPath(vrmFilePath: String) {
+        if (isDestroyed) return
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                addLog("Loading VRM model: $vrmFilePath")
+                val src = File(vrmFilePath)
+                if (!src.exists()) {
+                    addLog("ERROR: VRM file not found")
+                    withContext(Dispatchers.Main) { onModelLoaded?.invoke(false) }
+                    return@launch
+                }
+                // 拷到缓存目录，供本地服务器访问
+                val vrmDir = File(modelCacheDir, "vrm_active")
+                vrmDir.mkdirs()
+                val dst = File(vrmDir, "model.vrm")
+                src.inputStream().use { input -> dst.outputStream().use { input.copyTo(it) } }
+                ensureServerRunning()
+                val htmlUrl = if (serverPort > 0) "http://127.0.0.1:$serverPort/vrmstage/stage.html"
+                              else "file:///android_asset/vrmstage/stage.html"
+                val modelUrl = if (serverPort > 0) "http://127.0.0.1:$serverPort/vrm_active/model.vrm"
+                               else "file://" + dst.absolutePath
+                withContext(Dispatchers.Main) {
+                    if (isDestroyed) return@withContext
+                    isVrmMode = true
+                    loadUrl("about:blank")
+                    postDelayed({
+                        if (isDestroyed) return@postDelayed
+                        loadUrl(htmlUrl)
+                        postDelayed({
+                            if (isDestroyed) return@postDelayed
+                            evaluateJavascript("window.StageAPI ? StageAPI.loadModel('$modelUrl') : Promise.resolve(false)") { result ->
+                                val ok = result == "true"
+                                addLog(if (ok) "VRM model loaded" else "VRM load failed")
+                                onModelLoaded?.invoke(ok)
+                            }
+                        }, 800)
+                    }, 100)
+                }
+            } catch (e: Exception) {
+                addLog("VRM Exception: ${e.message}")
+                withContext(Dispatchers.Main) { onModelLoaded?.invoke(false) }
+            }
         }
     }
 

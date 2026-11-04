@@ -161,7 +161,11 @@ class Live2DCoordinator(
                 val file = File(customModelPath)
                 if (file.exists() && file.isFile) {
                     lastLoadedModelPath = customModelPath
-                    webView.loadLive2DModelFromPath(customModelPath)
+                    if (customModelPath.lowercase().endsWith(".vrm")) {
+                        webView.loadVrmModelFromPath(customModelPath)
+                    } else {
+                        webView.loadLive2DModelFromPath(customModelPath)
+                    }
                 } else {
                     prefs.edit().remove("active_model_path").apply()
                     lastLoadedModelPath = null

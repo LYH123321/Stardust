@@ -132,6 +132,25 @@ class ModelManager(private val context: Context) {
                     val hasMoc = modelFiles.any { name ->
                         name.endsWith(".moc3") || name.endsWith(".moc")
                     }
+                    val vrmFile = modelFiles.firstOrNull { name -> name.lowercase().endsWith(".vrm") }
+                    if (vrmFile != null) {
+                        // VRM 模型目录：单个 .vrm 文件即可
+                        val model = Live2DModel(
+                            id = "vrm_" + file.name.hashCode(),
+                            name = file.name.removeSuffix(".vrm").ifBlank { file.name },
+                            description = "VRM 3D 模型",
+                            modelPath = File(file, vrmFile).absolutePath,
+                            texturePath = "",
+                            physicsPath = "",
+                            motionPath = "",
+                            version = "VRM",
+                            isActive = false,
+                        )
+                        if (foundModels.none { it.modelPath == model.modelPath }) {
+                            foundModels.add(model)
+                        }
+                        return@forEach
+                    }
                     if (hasModelJson && hasMoc) {
                         val model = loadModelFromFolder(file)
                         if (model != null && foundModels.none { it.modelPath == model.modelPath }) {
