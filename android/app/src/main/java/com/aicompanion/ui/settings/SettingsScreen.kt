@@ -425,6 +425,7 @@ fun SettingsScreen(
 
     // === 新增：从文件导入角色（支持 JSON 角色包和 PNG 角色卡） ===
     val personaMgr = remember { com.aicompanion.persona.PersonaManager(context) }
+    val cardMgr = remember { com.aicompanion.character.CharacterCardManager(context) }
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -458,6 +459,40 @@ fun SettingsScreen(
                             description = card.description,
                         )
                         personaMgr.addPersona(persona)
+                        // === 世界书导入（增强）：条目完整转为原生 WorldInfo 并挂到角色卡 ===
+                        var worldInfoToast = ""
+                        if (card.characterBookEntries.isNotEmpty()) {
+                            try {
+                                val wi = com.aicompanion.tavern.TavernCardParser.bookEntriesToWorldInfo(
+                                    bookName = card.characterBookName.ifBlank { "${card.name}的世界书" },
+                                    entries = card.characterBookEntries,
+                                )
+                                val savedWi = cardMgr.addWorldInfo(wi)
+                                // 同步创建/更新 CharacterCard，挂 worldInfoId
+                                val existingCard = cardMgr.getAllCards().find { it.name == persona.name }
+                                if (existingCard != null) {
+                                    cardMgr.updateCard(existingCard.copy(worldInfoId = savedWi.id))
+                                } else {
+                                    cardMgr.addCard(
+                                        com.aicompanion.models.CharacterCard(
+                                            id = persona.id,
+                                            name = persona.name,
+                                            description = card.description,
+                                            personality = card.personality,
+                                            scenario = card.scenario,
+                                            firstMes = card.firstMessage,
+                                            mesExample = card.mesExample,
+                                            creatorNotes = card.creatorNotes,
+                                            systemPrompt = card.systemPrompt,
+                                            worldInfoId = savedWi.id,
+                                        )
+                                    )
+                                }
+                                worldInfoToast = "，世界书${card.characterBookEntries.size}条已导入"
+                            } catch (e: Exception) {
+                                android.util.Log.e("SettingsScreen", "世界书导入失败: ${e.message}", e)
+                            }
+                        }
                         // 保存头像（如果有）
                         card.avatarBitmap?.let { bmp ->
                             val avatarFile = File(context.filesDir, "avatar_${persona.id}.png")
@@ -465,7 +500,7 @@ fun SettingsScreen(
                             personaMgr.updatePersona(persona.id) { it.copy(avatarPath = avatarFile.absolutePath) }
                         }
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            Toast.makeText(context, "已导入角色：${card.name}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "已导入角色：${card.name}$worldInfoToast", Toast.LENGTH_SHORT).show()
                         }
                     }.onFailure { e ->
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -501,8 +536,41 @@ fun SettingsScreen(
                                 description = card.description,
                             )
                             personaMgr.addPersona(persona)
+                            // === 世界书导入（增强，与 PNG 路径一致）===
+                            var worldInfoToast = ""
+                            if (card.characterBookEntries.isNotEmpty()) {
+                                try {
+                                    val wi = com.aicompanion.tavern.TavernCardParser.bookEntriesToWorldInfo(
+                                        bookName = card.characterBookName.ifBlank { "${card.name}的世界书" },
+                                        entries = card.characterBookEntries,
+                                    )
+                                    val savedWi = cardMgr.addWorldInfo(wi)
+                                    val existingCard = cardMgr.getAllCards().find { it.name == persona.name }
+                                    if (existingCard != null) {
+                                        cardMgr.updateCard(existingCard.copy(worldInfoId = savedWi.id))
+                                    } else {
+                                        cardMgr.addCard(
+                                            com.aicompanion.models.CharacterCard(
+                                                id = persona.id,
+                                                name = persona.name,
+                                                description = card.description,
+                                                personality = card.personality,
+                                                scenario = card.scenario,
+                                                firstMes = card.firstMessage,
+                                                mesExample = card.mesExample,
+                                                creatorNotes = card.creatorNotes,
+                                                systemPrompt = card.systemPrompt,
+                                                worldInfoId = savedWi.id,
+                                            )
+                                        )
+                                    }
+                                    worldInfoToast = "，世界书${card.characterBookEntries.size}条已导入"
+                                } catch (e: Exception) {
+                                    android.util.Log.e("SettingsScreen", "世界书导入失败: ${e.message}", e)
+                                }
+                            }
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                Toast.makeText(context, "已导入角色：${card.name}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "已导入角色：${card.name}$worldInfoToast", Toast.LENGTH_SHORT).show()
                             }
                         }.onFailure { e ->
                             android.os.Handler(android.os.Looper.getMainLooper()).post {

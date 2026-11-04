@@ -77,6 +77,34 @@ fun WorldBookScreen(onBackClick: () -> Unit = {}) {
     val context = LocalContext.current
     val manager = remember { CharacterCardManager(context) }
     var refreshTick by remember { mutableStateOf(0) }
+    // 独立世界书 JSON 导入（酒馆「导出世界书」格式）
+    val importWbLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        Thread {
+            try {
+                val jsonStr = context.contentResolver.openInputStream(uri)?.use {
+                    it.bufferedReader().readText()
+                } ?: throw java.io.IOException("无法读取文件")
+                val (bookName, entries) = com.aicompanion.tavern.TavernCardParser.parseStandaloneWorldBook(jsonStr)
+                if (entries.isEmpty()) throw IllegalArgumentException("未解析到有效条目（需 SillyTavern 世界书 JSON）")
+                val wi = com.aicompanion.tavern.TavernCardParser.bookEntriesToWorldInfo(
+                    bookName = bookName.ifBlank { uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".json") ?: "导入的世界书" },
+                    entries = entries,
+                )
+                manager.addWorldInfo(wi)
+                refreshTick++
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "已导入世界书「${wi.name}」，共${entries.size}条", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "导入失败：${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
+    }
 
     // 对话框状态
     var showAddWorldDialog by remember { mutableStateOf(false) }
@@ -113,6 +141,12 @@ fun WorldBookScreen(onBackClick: () -> Unit = {}) {
                         fontSize = 15.sp,
                         modifier = Modifier.weight(1f),
                     )
+                    StradustButton(
+                        text = "导入JSON",
+                        onClick = { importWbLauncher.launch(arrayOf("application/json", "text/*")) },
+                        size = ButtonSize.SMALL,
+                    )
+                    Spacer(Modifier.width(8.dp))
                     StradustButton(
                         text = "添加世界书",
                         onClick = {

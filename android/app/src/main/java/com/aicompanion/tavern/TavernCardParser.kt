@@ -46,6 +46,7 @@ object TavernCardParser {
         val systemPrompt: String,
         val tags: List<String>,
         val characterBookEntries: List<BookEntry>,
+        val characterBookName: String = "",
         val alternateGreetings: List<String>,
         val avatarBitmap: Bitmap?,
         val uiHtml: String?,
@@ -53,7 +54,18 @@ object TavernCardParser {
         val rawExtensions: Map<String, Any>
     )
 
-    data class BookEntry(val keys: List<String>, val content: String, val comment: String = "")
+    data class BookEntry(
+        val keys: List<String>,
+        val content: String,
+        val comment: String = "",
+        val keySecondary: List<String> = emptyList(),
+        val constant: Boolean = false,
+        val selective: Boolean = false,
+        val insertionOrder: Int = 100,
+        val enabled: Boolean = true,
+        val position: String = "before_char",
+        val caseSensitive: Boolean = false,
+    )
 
     // ==================== 公开 API ====================
 
@@ -215,6 +227,118 @@ object TavernCardParser {
     }
 
     // ==================== 内部方法 ====================
+
+    /**
+     * SillyTavern 世界书 position 数字 → 星尘 position 字符串
+     * 搬自 SillyTavern 公开源码 world-info.js 的常量定义：
+     * 0=before_char, 1=after_char, 2=before_authors_note(?), 3=after(?),
+     * 实际 ST world_info position: 0=before, 1=after, 2=ANTop, 3=ANBottom, 4=atDepth, 5=EMTop, 6=EMBottom
+     * 星尘仅支持 before_char / after_char，其余归一到 before_char
+     */
+    private fun mapTavernPosition(pos: Int): String = when (pos) {
+        1 -> "after_char"
+        else -> "before_char" // 0、2~6 全归 before_char（星尘暂无 AN/depth 注入位）
+    }
+
+    /**
+     * 将解析出的酒馆世界书条目转成星尘原生 WorldInfo（可直接 addWorldInfo 挂到角色）
+     * 参考 SillyTavern character_book spec 与星尘 WorldInfoEntry 字段一一对应
+     */
+    fun bookEntriesToWorldInfo(
+        bookName: String,
+        entries: List<BookEntry>,
+    ): com.aicompanion.models.WorldInfo {
+        val wiEntries = entries.map { e ->
+            com.aicompanion.models.WorldInfoEntry(
+                id = java.util.UUID.randomUUID().toString(),
+                key = e.keys.joinToString(","),
+                keySecondary = e.keySecondary.joinToString(","),
+                content = e.content,
+                comment = e.comment,
+                constant = e.constant,
+                selective = e.selective,
+                insertionOrder = e.insertionOrder,
+                enabled = e.enabled,
+                position = e.position,
+            )
+        }
+        return com.aicompanion.models.WorldInfo(
+            id = java.util.UUID.randomUUID().toString(),
+            name = bookName.ifBlank { "导入的世界书" },
+            entries = wiEntries,
+        )
+    }
+
+    /**
+     * 解析 SillyTavern 独立世界书 JSON（酒馆「导出世界书」格式）
+     * 兼容两种结构：
+     * - 标准导出：{ "entries": { "0": {...}, "1": {...} }, ... }
+     * - Character-Book spec：{ "name": ..., "entries": [ {...}, ... ] }
+     * 搬自 SillyTavern world-info.js 的导入逻辑字段约定
+     */
+    fun parseStandaloneWorldBook(jsonStr: String): Pair<String, List<BookEntry>> {
+        val root = JSONObject(jsonStr)
+        var bookName = root.optString("name", "")
+        val entriesOut = mutableListOf<BookEntry>()
+        val entriesVal = root.opt("entries") ?: return Pair(bookName, emptyList())
+        when (entriesVal) {
+            is JSONArray -> {
+                // character_book spec 数组形式
+                for (i in 0 until entriesVal.length()) {
+                    val entry = entriesVal.getJSONObject(i)
+                    parseWbEntry(entry)?.let { entriesOut.add(it) }
+                }
+            }
+            is JSONObject -> {
+                // ST 导出：entries 是 {uid: entry} 字典
+                val ekeys = entriesVal.keys()
+                while (ekeys.hasNext()) {
+                    val ekey = ekeys.next()
+                    val entry = entriesVal.optJSONObject(ekey) ?: continue
+                    parseWbEntry(entry)?.let { entriesOut.add(it) }
+                }
+            }
+        }
+        return Pair(bookName, entriesOut)
+    }
+
+    private fun parseWbEntry(entry: JSONObject): BookEntry? {
+        val content = entry.optString("content", "")
+        if (content.isBlank()) return null
+        val keys = mutableListOf<String>()
+        // ST 导出格式: key 是数组；也有实现是逗号分隔字符串
+        when (val kv = entry.opt("key")) {
+            is JSONArray -> for (j in 0 until kv.length()) keys.add(kv.optString(j, ""))
+            is String -> keys.addAll(kv.split(",").map { it.trim() }.filter { it.isNotEmpty() })
+        }
+        val secondaryKeys = mutableListOf<String>()
+        when (val sk = entry.opt("keysecondary")) {
+            is JSONArray -> for (j in 0 until sk.length()) secondaryKeys.add(sk.optString(j, ""))
+            is String -> secondaryKeys.addAll(sk.split(",").map { it.trim() }.filter { it.isNotEmpty() })
+        }
+        val extensions = entry.optJSONObject("extensions")
+        val constant = entry.optBoolean("constant", false) ||
+            (extensions?.optBoolean("constant", false) ?: false)
+        val selective = entry.optBoolean("selective", false) ||
+            (extensions?.optBoolean("selective", false) ?: false)
+        val insertionOrder = entry.optInt("insertion_order",
+            extensions?.optInt("insertion_order", 100) ?: 100)
+        val enabledFlag = entry.optBoolean("enabled", true) &&
+            extensions?.optBoolean("disable", false) == false
+        // ST: disable=true 表示禁用
+        val enabledFinal = if (entry.has("disable")) !entry.optBoolean("disable", false) else enabledFlag
+        val position = mapTavernPosition(entry.optInt("position", 0))
+        val comment = entry.optString("comment", "")
+        return BookEntry(
+            keys, content, comment,
+            keySecondary = secondaryKeys,
+            constant = constant,
+            selective = selective,
+            insertionOrder = insertionOrder,
+            enabled = enabledFinal,
+            position = position,
+        )
+    }
 
     /**
      * PNG tEXt chunk 提取：返回 Map<keyword, text>
@@ -420,6 +544,7 @@ object TavernCardParser {
         // character book entries
         val bookEntries = mutableListOf<BookEntry>()
         val characterBook = data.optJSONObject("character_book")
+        var bookName = characterBook?.optString("name", "") ?: ""
         if (characterBook != null) {
             val entriesArr = characterBook.optJSONArray("entries")
             if (entriesArr != null) {
@@ -435,7 +560,47 @@ object TavernCardParser {
                     val content = entry.optString("content", "")
                     val comment = entry.optString("comment", "")
                     if (content.isNotEmpty()) {
-                        bookEntries.add(BookEntry(keys, content, comment))
+                        // 完整解析酒馆条目字段（SillyTavern character_book / V2 spec）
+                        val secondaryKeys = mutableListOf<String>()
+                        entry.optJSONArray("secondary_keys")?.let { sk ->
+                            for (j in 0 until sk.length()) secondaryKeys.add(sk.optString(j, ""))
+                        }
+                        // V3 spec: keysecondary；部分实现也用 secondary_keys（V2）
+                        if (secondaryKeys.isEmpty()) {
+                            entry.optJSONArray("keysecondary")?.let { sk ->
+                                for (j in 0 until sk.length()) secondaryKeys.add(sk.optString(j, ""))
+                            }
+                        }
+                        val extensions = entry.optJSONObject("extensions")
+                        // constant（蓝灯/常驻）：条目级 > extensions.constant
+                        val constant = entry.optBoolean("constant", false) ||
+                            (extensions?.optBoolean("constant", false) ?: false)
+                        val selective = entry.optBoolean("selective", false) ||
+                            (extensions?.optBoolean("selective", false) ?: false)
+                        // insertion_order（V2/V3 通用）
+                        val insertionOrder = entry.optInt("insertion_order",
+                            extensions?.optInt("insertion_order", 100) ?: 100)
+                        val enabledFlag = entry.optBoolean("enabled", true) &&
+                            extensions?.optBoolean("enabled", true) != false
+                        val position = when {
+                            entry.has("position") -> mapTavernPosition(entry.optInt("position", -1))
+                            extensions?.has("position") == true ->
+                                mapTavernPosition(extensions.optInt("position", -1))
+                            else -> "before_char"
+                        }
+                        val caseSensitive = extensions?.optBoolean("case_sensitive", false) ?: false
+                        bookEntries.add(
+                            BookEntry(
+                                keys, content, comment,
+                                keySecondary = secondaryKeys,
+                                constant = constant,
+                                selective = selective,
+                                insertionOrder = insertionOrder,
+                                enabled = enabledFlag,
+                                position = position,
+                                caseSensitive = caseSensitive,
+                            )
+                        )
                     }
                 }
             }
@@ -478,6 +643,7 @@ object TavernCardParser {
             systemPrompt = systemPrompt,
             tags = tags,
             characterBookEntries = bookEntries,
+            characterBookName = bookName,
             alternateGreetings = altGreetings,
             avatarBitmap = avatar,
             uiHtml = uiHtml,
