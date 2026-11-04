@@ -30,7 +30,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils, VRMHumanBoneName } from '@pixiv/three-vrm';
 
 const errEl = document.getElementById('err');
-function report(kind, msg){ try{ Live2DBridge.onNativeLog(kind + ': ' + msg);}catch(e){ errEl.textContent += kind+': '+msg+'\n'; } }
+function report(kind, msg){ try{ Live2DBridge.onNativeLog(kind + ': ' + msg);}catch(e){} try{ errEl.textContent += kind+': '+msg+'\n'; }catch(_){} }
+      function reportOk(ok){ try{ Live2DBridge.onModelLoaded(ok); }catch(e){} }
 window.addEventListener('error', e => report('JSERR', e.message));
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -79,9 +80,9 @@ window.StageAPI = {
       try{ v.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftUpperArm).rotation.z = 1.2; v.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightUpperArm).rotation.z = -1.2; }catch(e){}
       v.update(clock.getDelta());
       report('OK', 'loaded ' + url);
-      try{ Live2DBridge.onModelLoaded(url); }catch(e){}
+      reportOk(true);
       return true;
-    }catch(e){ report('LOADFAIL', e.message || String(e)); return false; }
+    }catch(e){ report('LOADFAIL', e.message || String(e)); reportOk(false); return false; }
   },
   // 星尘情绪：字符串（HAPPY/SAD/...），渐变过渡
   setEmotion(emo){

@@ -1725,14 +1725,25 @@ class Live2DWebView @JvmOverloads constructor(
                     postDelayed({
                         if (isDestroyed) return@postDelayed
                         loadUrl(htmlUrl)
-                        postDelayed({
-                            if (isDestroyed) return@postDelayed
-                            evaluateJavascript("window.StageAPI ? StageAPI.loadModel('$modelUrl') : Promise.resolve(false)") { result ->
-                                val ok = result == "true"
-                                addLog(if (ok) "VRM model loaded" else "VRM load failed")
-                                onModelLoaded?.invoke(ok)
+                        // 等待 stage ready（StageAPI 出现）再调 loadModel，最长 8s
+                        var waited = 0
+                        fun pokeStage() {
+                            if (isDestroyed) return
+                            evaluateJavascript("!!window.StageAPI") { ready ->
+                                if (ready == "true") {
+                                    // loadModel 是 async：靠 JS 端 onModelLoaded 回调报结果，
+                                    // 不依赖 evaluateJavascript 的返回值（拿不到 Promise）
+                                    evaluateJavascript("StageAPI.loadModel('$modelUrl').catch(e => { try{ Live2DBridge.onModelLoaded(false) }catch(_){} }); void 0", null)
+                                } else if (waited < 8000) {
+                                    waited += 250
+                                    postDelayed({ pokeStage() }, 250)
+                                } else {
+                                    addLog("VRM stage not ready after 8s")
+                                    onModelLoaded?.invoke(false)
+                                }
                             }
-                        }, 800)
+                        }
+                        pokeStage()
                     }, 100)
                 }
             } catch (e: Exception) {
