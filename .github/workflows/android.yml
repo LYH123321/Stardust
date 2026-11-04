@@ -35,4 +35,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stardust-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: android/app/build_v3/outputs/apk/debug/*.apk
