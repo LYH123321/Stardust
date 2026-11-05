@@ -488,6 +488,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // API配置检查
         if (apiClient == null || settingsManager == null) {
+            // 本地模型模式下不需要 ApiClient（无网络请求）
+            val smLocal = settingsManager
+            if (smLocal?.useLocalLlm == true && message.isNotBlank()) {
+                return true
+            }
             com.aicompanion.util.AppLogger.e(TAG, "validateInput: apiClient=${apiClient != null}, settingsManager=${settingsManager != null}")
             val msg = addPetMessageInternal("请先在设置中配置 API 哦~", Emotion.NEUTRAL, Action.IDLE)
             if (msg != null) {
@@ -512,9 +517,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         getPersonaInfo: suspend (String) -> Pair<String, String>
     ): ChatRequest {
         AppLogger.w(TAG, "prepareRequest: 开始准备请求参数")
-
         val sm = settingsManager ?: throw IllegalStateException("SettingsManager未初始化")
-        val client = apiClient ?: throw IllegalStateException("ApiClient未初始化")
+        val client = apiClient  // 本地模式下可为 null（仅取 url 之外的无用字段）
         val actionMgr = aiActionManager
 
         // 获取角色信息
@@ -550,7 +554,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         // 情绪分析
         var emotionParams = EmotionParams()
-        if (sm.emotionAnalysisEnabled && client.chatApiUrl.isNotBlank()) {
+        if (sm.emotionAnalysisEnabled && client != null && client.chatApiUrl.isNotBlank()) {
             try {
                 val analyzer = emotionAnalyzer ?: com.aicompanion.emotion.EmotionAnalyzer(client).also { emotionAnalyzer = it }
                 emotionParams = withContext(Dispatchers.IO) {
@@ -613,12 +617,80 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==================== 阶段3: 调用阶段 ====================
+    /**
+     * 本地模型（GenieX NPU）聊天：不走网络、无工具调用。
+     * 情绪/动作靠提示词让模型带 [[emotion:xxx]] 标签，本地解析逻辑与云端一致。
+     */
+    private suspend fun localLlmChat(
+        request: ChatRequest,
+        systemContext: String,
+        onDelta: ((String) -> Unit)?
+    ): ChatResponse? {
+        val sm = settingsManager ?: return null
+        if (!com.aicompanion.localmodel.GenieXEngine.isLoaded) {
+            // 尝试加载上一次选中的本地模型
+            val ctx = getApplication<android.app.Application>()
+            val entry = com.aicompanion.localmodel.LlmModelRegistry.find(sm.localLlmModelId)
+            if (entry == null) return ChatResponse(
+                text = "", emotion = Emotion.NEUTRAL, action = Action.IDLE,
+                errorMessage = "本地模型未下载，去设置 → 本地模型里下载一个"
+            )
+            val dir = com.aicompanion.localmodel.LlmModelRegistry.modelDir(ctx, entry)
+            AppLogger.w(TAG, "localLlmChat: lazy loading ${entry.id}")
+            val loadResult = com.aicompanion.localmodel.GenieXEngine.load(
+                ctx, dir, sm.localLlmComputeUnit, enableThinking = false
+            )
+            if (loadResult.isFailure) {
+                return ChatResponse(
+                    text = "", emotion = Emotion.SAD, action = Action.IDLE,
+                    errorMessage = "本地模型加载失败: ${loadResult.exceptionOrNull()?.message}"
+                )
+            }
+        }
+        val systemPrompt = buildString {
+            append(request.personaPrompt + request.nicknameContext)
+            if (systemContext.isNotBlank()) append("\n\n$systemContext")
+            append("\n\n【重要】回复控制在100字以内，口语化。如果情绪明显，在回复最前面加一个情绪标签，格式如 [[emotion:HAPPY]]（可选: HAPPY/SAD/ANGRY/SURPRISED/TSUNDERE/NEUTRAL）。")
+        }
+        val (text, err) = com.aicompanion.localmodel.GenieXEngine.chatStream(
+            systemPrompt = systemPrompt,
+            history = request.history,
+            userMessage = request.message,
+            maxTokens = 256,
+            onDelta = onDelta,
+        )
+        if (err != null) {
+            return ChatResponse(text = "", emotion = Emotion.SAD, action = Action.IDLE, errorMessage = err)
+        }
+        // 复用 ApiClient 的情绪标签解析（[[emotion:XXX]] → Emotion + 清洗文本）
+        val (cleanText, emotion, action) = extractEmotionFromLocal(text)
+        return ChatResponse(text = cleanText, emotion = emotion, action = action)
+    }
+
+    /** 本地输出情绪标签解析（与 ApiClient.extractEmotionAction 同规则） */
+    private fun extractEmotionFromLocal(text: String): Triple<String, Emotion, Action> {
+        val regex = Regex("""\[\[emotion:(\w+)\]\]""", RegexOption.IGNORE_CASE)
+        val match = regex.find(text)
+        val emotion = if (match != null) {
+            try { Emotion.valueOf(match.groupValues[1].uppercase()) } catch (_: Exception) { Emotion.NEUTRAL }
+        } else Emotion.NEUTRAL
+        val cleanText = regex.replace(text, "").trim()
+        val action = when (emotion) {
+            Emotion.HAPPY -> Action.TAIL_FLICK
+            Emotion.SAD -> Action.IDLE
+            Emotion.ANGRY -> Action.EAR_TWITCH
+            Emotion.SURPRISED -> Action.STRETCH
+            Emotion.TSUNDERE -> Action.BLUSH
+            Emotion.NEUTRAL -> Action.IDLE
+        }
+        return Triple(cleanText, emotion, action)
+    }
 
     /**
      * 调用API发送请求
      */
     private suspend fun callApi(request: ChatRequest): ChatResponse? {
-        val client = apiClient ?: throw IllegalStateException("ApiClient未初始化")
+        val client = apiClient  // 本地模式下可为 null
         val sm = settingsManager ?: throw IllegalStateException("SettingsManager未初始化")
         val actionMgr = aiActionManager
 
@@ -645,8 +717,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // 流式模式下：每收到一段文本增量就写进同一个气泡（见 onStreamDelta）
         val deltaHandler: ((String) -> Unit)? =
             if (streamMode) { text -> onStreamDelta(text) } else null
-
+        // ===== 本地模型后端（GenieX NPU）=====
+        if (sm.useLocalLlm) {
+            return localLlmChat(request, systemContextWithSkills, deltaHandler)
+        }
         return if (request.tools.isNotEmpty()) {
+            if (client == null) {
+                // 本地模式无工具执行能力，直接走本地聊天
+                return localLlmChat(request, systemContextWithSkills, deltaHandler)
+            }
             AppLogger.w(TAG, "callApi: 调用sendChatWithToolLoop stream=$streamMode")
             withContext(Dispatchers.IO) {
                 client.sendChatWithToolLoop(

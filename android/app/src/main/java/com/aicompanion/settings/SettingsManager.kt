@@ -274,6 +274,17 @@ class SettingsManager(context: Context) {
         get() = prefs.getString("api_provider", "custom") ?: "custom"
         set(value) { prefs.edit().putString("api_provider", value).apply() }
 
+    // ===== 本地 LLM（GenieX NPU）=====
+    var useLocalLlm: Boolean
+        get() = prefs.getBoolean("local_llm_enabled", false)
+        set(value) { prefs.edit().putBoolean("local_llm_enabled", value).apply() }
+    var localLlmModelId: String
+        get() = prefs.getString("local_llm_model_id", "qwen3-06b-q4") ?: "qwen3-06b-q4"
+        set(value) { prefs.edit().putString("local_llm_model_id", value).apply() }
+    var localLlmComputeUnit: String
+        get() = prefs.getString("local_llm_compute_unit", "npu") ?: "npu"
+        set(value) { prefs.edit().putString("local_llm_compute_unit", value).apply() }
+
     var ttsProvider: String
         get() = prefs.getString("tts_provider", "custom") ?: "custom"
         set(value) { prefs.edit().putString("tts_provider", value).apply() }

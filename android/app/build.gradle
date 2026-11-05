@@ -104,6 +104,8 @@ dependencies {
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
     implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    // GenieX: 高通端侧 LLM 推理引擎（llama_cpp 混合算力 + qairt NPU），AAR 含 arm64 so 约 200MB
+    implementation 'com.qualcomm.qti:geniex-android:0.3.5'
     implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
     implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
     implementation 'com.google.mlkit:text-recognition:16.0.0'
