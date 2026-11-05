@@ -747,6 +747,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         } else {
+            if (client == null) {
+                return localLlmChat(request, systemContextWithSkills, deltaHandler)
+            }
             AppLogger.w(TAG, "callApi: 调用sendChat stream=$streamMode")
             withContext(Dispatchers.IO) {
                 client.sendChat(
