@@ -453,6 +453,26 @@ class SettingsManager(context: Context) {
         get() = prefs.getBoolean("live2d_overlay_mode", false)
         set(value) { prefs.edit().putBoolean("live2d_overlay_mode", value).apply() }
 
+    // ===== VRM 场景参数（对标 Airi 角色模型设置页） =====
+    private fun vrmFloat(key: String, def: Float) = prefs.getFloat("vrm_$key", def)
+    private fun setVrmFloat(key: String, value: Float) { prefs.edit().putFloat("vrm_$key", value).apply() }
+    var vrmModelPosX: Float get() = vrmFloat("posx", 0f); set(v) = setVrmFloat("posx", v)
+    var vrmModelPosY: Float get() = vrmFloat("posy", 0f); set(v) = setVrmFloat("posy", v)
+    var vrmModelPosZ: Float get() = vrmFloat("posz", 0f); set(v) = setVrmFloat("posz", v)
+    var vrmCameraDistance: Float get() = vrmFloat("camdist", 4f); set(v) = setVrmFloat("camdist", v)
+    var vrmCameraFov: Float get() = vrmFloat("camfov", 30f); set(v) = setVrmFloat("camfov", v)
+    var vrmModelYaw: Float get() = vrmFloat("yaw", 0f); set(v) = setVrmFloat("yaw", v)
+    var vrmLightRotX: Float get() = vrmFloat("lrx", 34f); set(v) = setVrmFloat("lrx", v)
+    var vrmLightRotY: Float get() = vrmFloat("lry", 0f); set(v) = setVrmFloat("lry", v)
+    var vrmLightIntensity: Float get() = vrmFloat("li", 2f); set(v) = setVrmFloat("li", v)
+    var vrmAmbientIntensity: Float get() = vrmFloat("ai", 1.57f); set(v) = setVrmFloat("ai", v)
+    /** 注视模式：camera / mouse / none */
+    var vrmLookAtMode: String
+        get() = prefs.getString("vrm_lookat", "camera") ?: "camera"
+        set(value) { prefs.edit().putString("vrm_lookat", value).apply() }
+    val vrmSceneChanged = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+    fun notifyVrmSceneChanged() { vrmSceneChanged.forEach { runCatching { it() } } }
+
     // 开机自启动（默认开启）
     var autoStart: Boolean
         get() = prefs.getBoolean("auto_start", true)

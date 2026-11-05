@@ -1753,6 +1753,15 @@ class Live2DWebView @JvmOverloads constructor(
         }
     }
 
+    /** 应用 VRM 场景参数（对标 Airi 场景设置）：key=StageAPI 方法名，value=参数 */
+    fun applyVrmSceneParam(method: String, argsJson: String) {
+        if (isDestroyed || !isVrmMode) return
+        post {
+            try {
+                evaluateJavascript("window.StageAPI && StageAPI.$method($argsJson)", null)
+            } catch (e: Exception) { AppLogger.e("Live2D", "applyVrmSceneParam: ${e.message}") }
+        }
+    }
     fun setAction(action: Action) {
         if (isDestroyed) return
         val now = System.currentTimeMillis()

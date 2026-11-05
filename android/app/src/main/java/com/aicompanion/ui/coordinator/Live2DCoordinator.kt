@@ -66,6 +66,24 @@ class Live2DCoordinator(
         offsetX = prefs.getFloat("model_offset_x", 0f)
         offsetY = prefs.getFloat("model_offset_y", 0f)
         modelBaseScale = prefs.getFloat("model_scale", 1f)
+        applyVrmSceneSettings()
+    }
+    /** 把 VRM 场景参数推给 WebView（VRM 模式才生效） */
+    fun applyVrmSceneSettings() {
+        val view = live2dView ?: return
+        fun f(key: String, def: Float) = prefs.getFloat("vrm_$key", def)
+        val lookAt = prefs.getString("vrm_lookat", "camera") ?: "camera"
+        // 延迟一点：VRM 舞台可能还在加载
+        view.postDelayed({
+            view.applyVrmSceneParam("setModelPosition", "${f("posx",0f)},${f("posy",0f)},${f("posz",0f)}")
+            view.applyVrmSceneParam("setCameraDistance", "${f("camdist",4f)}")
+            view.applyVrmSceneParam("setCameraFov", "${f("camfov",30f)}")
+            view.applyVrmSceneParam("setModelYaw", "${f("yaw",0f)}")
+            view.applyVrmSceneParam("setLightRotation", "${f("lrx",34f)},${f("lry",0f)}")
+            view.applyVrmSceneParam("setLightIntensity", "${f("li",2f)}")
+            view.applyVrmSceneParam("setAmbientIntensity", "${f("ai",1.57f)}")
+            view.applyVrmSceneParam("setLookAtMode", "'$lookAt'")
+        }, 1200)
     }
 
     /** 获取当前模型缩放（0.3 - 3.0） */

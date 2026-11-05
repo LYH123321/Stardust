@@ -5495,6 +5495,9 @@ class MainActivity : ComponentActivity(), StradustDestinations.AppHost {
     override fun setLive2DScale(scale: Float) {
         live2DCoordinator?.setScale(scale)
     }
+    override fun applyVrmSceneSettings() {
+        live2DCoordinator?.applyVrmSceneSettings()
+    }
 
     // ===== AI 预测回复桥接方法 =====
 

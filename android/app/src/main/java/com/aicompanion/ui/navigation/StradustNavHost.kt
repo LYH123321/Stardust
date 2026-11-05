@@ -368,6 +368,8 @@ object StradustDestinations {
         fun getLive2DScale(): Float = 1f
         /** 实时设置 Live2D 模型缩放并持久化 */
         fun setLive2DScale(scale: Float) {}
+        /** 应用 VRM 场景设置（设置页滑条变化时调用） */
+        fun applyVrmSceneSettings() {}
 
         // ===== AI 预测回复桥接（ChatScreen） =====
         /** 获取当前预测回复列表（变化时触发重组） */
@@ -648,6 +650,7 @@ fun StradustNavHost(
                 onLive2DModelChange = { modelId -> host?.setLive2DModel(modelId) },
                 live2dScale = live2dScale,
                 onLive2DScaleChange = { scale -> host?.setLive2DScale(scale) },
+                onVrmSceneChange = { host?.applyVrmSceneSettings() },
             )
         }
         composable(

@@ -219,6 +219,7 @@ fun SettingsScreen(
     live2dScale: Float = 1f,
     /** Live2D 模型缩放变化回调 */
     onLive2DScaleChange: (Float) -> Unit = {},
+    onVrmSceneChange: (() -> Unit)? = null,
 ) {
     // 关键修复：所有主题状态从 ThemeState 读取，写入也走 ThemeState
     val selectedTheme = ThemeState.currentThemeId
@@ -3257,6 +3258,54 @@ fun SettingsScreen(
                             checked = sm.live2dOverlayMode,
                             onCheckedChange = { sm.live2dOverlayMode = it },
                         )
+                        // ===== VRM 场景调整（对标 Airi 角色模型设置） =====
+                        var showVrmScene by remember { mutableStateOf(false) }
+                        StradustButton(
+                            text = if (showVrmScene) "收起 VRM 场景调整" else "🎛 VRM 场景调整（3D 模型）",
+                            onClick = { showVrmScene = !showVrmScene },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                        if (showVrmScene) {
+                            var camDist by remember { mutableFloatStateOf(sm.vrmCameraDistance) }
+                            var camFov by remember { mutableFloatStateOf(sm.vrmCameraFov) }
+                            var modelYaw by remember { mutableFloatStateOf(sm.vrmModelYaw) }
+                            var posY by remember { mutableFloatStateOf(sm.vrmModelPosY) }
+                            var lightX by remember { mutableFloatStateOf(sm.vrmLightRotX) }
+                            var lightI by remember { mutableFloatStateOf(sm.vrmLightIntensity) }
+                            var ambI by remember { mutableFloatStateOf(sm.vrmAmbientIntensity) }
+                            var lookAt by remember { mutableStateOf(sm.vrmLookAtMode) }
+                            fun push() {
+                                sm.vrmCameraDistance = camDist; sm.vrmCameraFov = camFov
+                                sm.vrmModelYaw = modelYaw; sm.vrmModelPosY = posY
+                                sm.vrmLightRotX = lightX; sm.vrmLightIntensity = lightI
+                                sm.vrmAmbientIntensity = ambI; sm.vrmLookAtMode = lookAt
+                                onVrmSceneChange?.invoke()
+                            }
+                            com.aicompanion.ui.common.VrmSlider("相机距离（画面缩放）", camDist, 1.5f..10f) { camDist = it; push() }
+                            com.aicompanion.ui.common.VrmSlider("视角（FOV 度）", camFov, 15f..70f) { camFov = it; push() }
+                            com.aicompanion.ui.common.VrmSlider("模型朝向（Y轴旋转）", modelYaw, -180f..180f) { modelYaw = it; push() }
+                            com.aicompanion.ui.common.VrmSlider("模型高度位置", posY, -1f..2f) { posY = it; push() }
+                            com.aicompanion.ui.common.VrmSlider("灯光角度 X", lightX, 0f..90f) { lightX = it; push() }
+                            com.aicompanion.ui.common.VrmSlider("灯光强度", lightI, 0f..5f) { lightI = it; push() }
+                            com.aicompanion.ui.common.VrmSlider("环境光强度", ambI, 0f..4f) { ambI = it; push() }
+                            // 注视模式
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                            ) {
+                                Text("模型注视：", color = StradustTheme.colors.textPrimary, fontSize = 14.sp)
+                                listOf("camera" to "相机", "mouse" to "触摸", "none" to "禁用").forEach { (mode, label) ->
+                                    Text(
+                                        text = label,
+                                        color = if (lookAt == mode) StradustTheme.colors.primary else StradustTheme.colors.textSecondary,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (lookAt == mode) FontWeight.Bold else FontWeight.Normal,
+                                        modifier = Modifier.clickable { lookAt = mode; push() },
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
                     }
                     // Live2D 模型切换（仅在启用时显示）
                     if (live2dEnabled && live2dModels.isNotEmpty()) {

@@ -57,6 +57,18 @@ const EXPR_MAP = {            // 星尘 Emotion → VRM 表情（标准 blendsha
   RELAXED: 'relaxed', NEUTRAL: 'neutral',
 };
 let blinkT = 0, blinkNext = 2;
+const lookAtMouse = new THREE.Object3D(); // 「注视鼠标/触摸」模式的目标
+lookAtMouse.position.set(0, 1.35, 0);
+scene.add(lookAtMouse);
+// 触摸移动鼠标目标（Airi 的 mouse-look 模式）
+window.addEventListener('touchmove', e => {
+  const t = e.touches[0]; if(!t) return;
+  lookAtMouse.position.set(
+    (t.clientX/innerWidth - 0.5) * 2,
+    1.35 + (0.5 - t.clientY/innerHeight) * 1.5,
+    2.0
+  );
+}, {passive: true});
 
 function setExpr(name, v){ if(vrm && vrm.expressionManager){ try{ vrm.expressionManager.setValue(name, v); }catch(e){} } currentExpr[name] = v; }
 
@@ -96,6 +108,28 @@ window.StageAPI = {
   },
   setRotation(yaw){ if(vrm){ try{ vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Hips).rotation.y = yaw; }catch(e){} } },
   setCameraPos(x,y,z){ camera.position.set(x,y,z); },
+  // ===== 场景参数（对标 Airi 角色模型设置） =====
+  setModelPosition(x,y,z){ if(vrm){ vrm.scene.position.set(x,y,z); } },
+  setCameraDistance(d){
+    const dir = camera.position.clone().normalize();
+    camera.position.copy(dir.multiplyScalar(d));
+  },
+  setCameraFov(deg){ camera.fov = deg; camera.updateProjectionMatrix(); },
+  setModelYaw(deg){ if(vrm){ vrm.scene.rotation.y = deg * Math.PI / 180; } },
+  setLightRotation(xDeg,yDeg){
+    light.position.set(
+      Math.sin(yDeg*Math.PI/180)*Math.cos(xDeg*Math.PI/180),
+      Math.sin(xDeg*Math.PI/180),
+      Math.cos(yDeg*Math.PI/180)*Math.cos(xDeg*Math.PI/180)
+    ).normalize();
+  },
+  setLightIntensity(v){ light.intensity = v; },
+  setLightColor(hex){ try{ light.color.set(hex); }catch(e){} },
+  setAmbientIntensity(v){ scene.children.forEach(o=>{ if(o.isAmbientLight) o.intensity=v; }); },
+  setLookAtMode(mode){
+    if(!vrm || !vrm.lookAt) return;
+    vrm.lookAt.target = (mode==='camera') ? camera : ((mode==='mouse') ? lookAtMouse : null);
+  },
   screenshot(){ try{ renderer.render(scene, camera); return renderer.domElement.toDataURL('image/png'); }catch(e){ return ''; } },
 };
 
