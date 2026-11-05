@@ -47,7 +47,8 @@ object GenieXEngine {
 
     /**
      * 加载模型。
-     * @param modelDir 包含 *.gguf 的模型目录
+     * @param modelDir 包含 *.gguf 的模型目录（传了 modelFile 可为任意值）
+     * @param modelFile 直接指定 gguf 文件（本地导入/扫描引用时用）
      * @param computeUnit "npu" / "gpu" / "cpu" / "hybrid"
      */
     suspend fun load(
@@ -56,12 +57,15 @@ object GenieXEngine {
         computeUnit: String = "npu",
         enableThinking: Boolean = false,
         nCtx: Int = 1024,
+        modelFile: File? = null,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             unload()
-            val gguf = modelDir.listFiles { f -> f.extension == "gguf" }
-                ?.maxByOrNull { it.length() }
+            val gguf = modelFile
+                ?: modelDir.listFiles { f -> f.extension == "gguf" }
+                    ?.maxByOrNull { it.length() }
                 ?: error("目录里没有 .gguf: ${modelDir.absolutePath}")
+            if (!gguf.exists()) error("模型文件不存在: ${gguf.absolutePath}")
             // tokenizer 就是 gguf 内嵌的（Qwen3 GGUF），官方 demo 对 GGUF 也传同路径
             val isQairt = false  // 星尘统一走 llama_cpp（支持 mmap 分层 + 混合算力），qairt 需要专用签名模型
             val conf = if (isQairt) {

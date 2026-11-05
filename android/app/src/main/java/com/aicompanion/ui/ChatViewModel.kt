@@ -630,15 +630,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (!com.aicompanion.localmodel.GenieXEngine.isLoaded) {
             // 尝试加载上一次选中的本地模型
             val ctx = getApplication<android.app.Application>()
-            val entry = com.aicompanion.localmodel.LlmModelRegistry.find(sm.localLlmModelId)
+            val entry = com.aicompanion.localmodel.LlmModelRegistry.find(ctx, sm.localLlmModelId)
             if (entry == null) return ChatResponse(
                 text = "", emotion = Emotion.NEUTRAL, action = Action.IDLE,
                 errorMessage = "本地模型未下载，去设置 → 本地模型里下载一个"
             )
             val dir = com.aicompanion.localmodel.LlmModelRegistry.modelDir(ctx, entry)
-            AppLogger.w(TAG, "localLlmChat: lazy loading ${entry.id}")
+            val ggufFile = com.aicompanion.localmodel.LlmModelRegistry.modelFile(ctx, entry)
+            AppLogger.w(TAG, "localLlmChat: lazy loading ${entry.id} file=${ggufFile?.name}")
             val loadResult = com.aicompanion.localmodel.GenieXEngine.load(
-                ctx, dir, sm.localLlmComputeUnit, enableThinking = false
+                ctx, dir, sm.localLlmComputeUnit, enableThinking = false, modelFile = ggufFile
             )
             if (loadResult.isFailure) {
                 return ChatResponse(

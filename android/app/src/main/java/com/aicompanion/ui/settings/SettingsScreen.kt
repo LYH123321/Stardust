@@ -4548,31 +4548,93 @@ private fun LocalLlmPanel(sm: com.aicompanion.settings.SettingsManager) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val downloader = remember { com.aicompanion.localmodel.LlmModelDownloader(context) }
-    // 每个模型的状态文本
     var statuses by remember { mutableStateOf(mapOf<String, String>()) }
     var busy by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableIntStateOf(0) }
 
-    fun setStatus(id: String, s: String) {
-        statuses = statuses + (id to s)
+    fun setStatus(id: String, s: String) { statuses = statuses + (id to s) }
+
+    // SAF 文件选择器（导入任意 .gguf）
+    val ggufPicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            busy = true
+            setStatus("__import", "导入中（拷贝文件）...")
+            scope.launch {
+                val name = com.aicompanion.util.UriUtils.queryDisplayName(context, uri) ?: "model.gguf"
+                val entry = downloader.importFromUri(uri, name)
+                setStatus("__import", if (entry != null) "导入成功: ${entry.name}" else "导入失败")
+                if (entry != null) { sm.localLlmModelId = entry.id; sm.useLocalLlm = true; refreshKey++ }
+                busy = false
+            }
+        }
     }
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Text(
-            "说明：模型从 hf-mirror.com（国内直连）下载，存在 App 外部存储。开启上面的开关后聊天走本地推理（NPU，离线、免费、无需 API）。小模型能力有限，适合闲聊。",
+            "说明：内置模型从 hf-mirror.com（国内直连）下载；也可从文件管理器导入任意 .gguf（Qwen/Llama/DeepSeek 等量化模型均可），或扫描 Download 目录直接登记（不拷贝）。",
             color = StradustTheme.colors.textSecondary,
             fontSize = 12.sp,
         )
         Spacer(Modifier.height(8.dp))
-        com.aicompanion.localmodel.LlmModelRegistry.models.forEach { entry ->
-            val downloaded = remember(entry.id) { downloader.isDownloaded(entry) }
+        // ===== 导入入口 =====
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StradustButton(
+                text = "📁 从文件选择器导入 .gguf",
+                onClick = { if (!busy) ggufPicker.launch(arrayOf("*/*")) },
+                modifier = Modifier.weight(1f),
+            )
+            StradustButton(
+                text = "🔍 扫描 Download",
+                onClick = {
+                    if (busy) return@StradustButton
+                    val n = downloader.scanAndRegisterDownloads()
+                    setStatus("__scan", if (n > 0) "新发现 $n 个模型" else "没有新模型")
+                    if (n > 0) refreshKey++
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Text(
+            text = statuses["__import"] ?: statuses["__scan"] ?: "",
+            color = StradustTheme.colors.textMuted, fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // ===== 模型列表（内置 + 自定义）=====
+        val allModels = remember(refreshKey) { com.aicompanion.localmodel.LlmModelRegistry.allModels(context) }
+        allModels.forEach { entry ->
+            val fileReady = remember(entry.id, refreshKey) {
+                entry.localOnly || downloader.isDownloaded(entry)
+            }
             StradustCard(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    Text(entry.name, color = StradustTheme.colors.textPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            entry.name,
+                            color = StradustTheme.colors.textPrimary,
+                            fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (entry.localOnly) {
+                            Text(
+                                "自定义", color = StradustTheme.colors.primary, fontSize = 11.sp,
+                                modifier = Modifier
+                                    .clickable {
+                                        com.aicompanion.localmodel.GenieXEngine.unload()
+                                        com.aicompanion.localmodel.LlmModelRegistry.removeCustom(context, entry.id)
+                                        if (sm.localLlmModelId == entry.id) sm.localLlmModelId = "qwen3-06b-q4"
+                                        refreshKey++
+                                    }
+                                    .padding(horizontal = 6.dp),
+                            )
+                        }
+                    }
                     if (entry.description.isNotBlank()) {
                         Text(entry.description, color = StradustTheme.colors.textSecondary, fontSize = 12.sp)
                     }
                     Spacer(Modifier.height(6.dp))
-                    // 选中 + 算力选择
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = if (sm.localLlmModelId == entry.id) "✓ 当前使用" else "点此启用",
@@ -4595,54 +4657,48 @@ private fun LocalLlmPanel(sm: com.aicompanion.settings.SettingsManager) {
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = statuses[entry.id] ?: if (downloaded) "已下载" else "未下载",
+                        text = statuses[entry.id] ?: if (fileReady) "文件就绪" else "未下载",
                         color = StradustTheme.colors.textMuted, fontSize = 12.sp,
                     )
                     Spacer(Modifier.height(6.dp))
                     Row {
-                        StradustButton(
-                            text = if (downloaded) "重新下载" else "下载",
-                            onClick = {
-                                if (busy) return@StradustButton
-                                busy = true
-                                scope.launch {
-                                    setStatus(entry.id, "下载中...")
-                                    val ok = downloader.download(entry) { done, total ->
-                                        setStatus(entry.id, "下载中 ${(done * 100 / total.coerceAtLeast(1))}%")
+                        if (!entry.localOnly) {
+                            StradustButton(
+                                text = if (fileReady) "重新下载" else "下载",
+                                onClick = {
+                                    if (busy) return@StradustButton
+                                    busy = true
+                                    scope.launch {
+                                        setStatus(entry.id, "下载中...")
+                                        val ok = downloader.download(entry) { done, total ->
+                                            setStatus(entry.id, "下载中 ${(done * 100 / total.coerceAtLeast(1))}%")
+                                        }
+                                        setStatus(entry.id, if (ok) "下载完成" else "下载失败（看日志）")
+                                        if (ok) refreshKey++
+                                        busy = false
                                     }
-                                    setStatus(entry.id, if (ok) "下载完成" else "下载失败（看日志）")
-                                    busy = false
-                                }
-                            },
-                        )
-                        Spacer(Modifier.width(8.dp))
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
                         StradustButton(
                             text = "预加载",
                             onClick = {
-                                if (busy || !downloader.isDownloaded(entry)) return@StradustButton
+                                if (busy) return@StradustButton
                                 busy = true
                                 setStatus(entry.id, "加载中（首次可能要十几秒）...")
                                 scope.launch {
                                     val r = com.aicompanion.localmodel.GenieXEngine.load(
-                                        context, com.aicompanion.localmodel.LlmModelRegistry.modelDir(context, entry),
+                                        context,
+                                        com.aicompanion.localmodel.LlmModelRegistry.modelDir(context, entry),
                                         sm.localLlmComputeUnit,
+                                        modelFile = com.aicompanion.localmodel.LlmModelRegistry.modelFile(context, entry),
                                     )
-                                    setStatus(entry.id, if (r.isSuccess) "已加载（NPU就绪）" else "加载失败: ${r.exceptionOrNull()?.message}")
+                                    setStatus(entry.id, if (r.isSuccess) "已加载（就绪）" else "加载失败: ${r.exceptionOrNull()?.message}")
                                     busy = false
                                 }
                             },
                         )
-                        if (downloaded) {
-                            Spacer(Modifier.width(8.dp))
-                            StradustButton(
-                                text = "删除",
-                                onClick = {
-                                    com.aicompanion.localmodel.GenieXEngine.unload()
-                                    downloader.delete(entry)
-                                    setStatus(entry.id, "已删除")
-                                },
-                            )
-                        }
                     }
                 }
             }

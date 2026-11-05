@@ -13,10 +13,11 @@ import java.util.concurrent.TimeUnit
 data class LlmModelEntry(
     val id: String,
     val name: String,
-    val repo: String,        // HF repo，如 unsloth/Qwen3-0.6B-GGUF
+    val repo: String,        // HF repo，如 unsloth/Qwen3-0.6B-GGUF；本地导入的为空
     val file: String,        // 文件名，如 Qwen3-0.6B-Q4_0.gguf
     val sizeBytes: Long,
     val description: String = "",
+    val localOnly: Boolean = false,  // true = 用户本地导入，无需下载
 )
 
 object LlmModelRegistry {
@@ -36,6 +37,66 @@ object LlmModelRegistry {
 
     fun modelDir(context: Context, entry: LlmModelEntry): File =
         File(context.getExternalFilesDir(null) ?: context.filesDir, "llm_models/${entry.id}")
+
+    /** 解析条目对应的 gguf 文件：优先 App 目录，找不到则找 Download 里的同名文件（扫描登记的） */
+    fun modelFile(context: Context, entry: LlmModelEntry): File? {
+        val inApp = File(modelDir(context, entry), entry.file)
+        if (inApp.exists()) return inApp
+        val dl = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        listOf(dl, File(dl, "Live2D")).forEach { root ->
+            val f = File(root, entry.file)
+            if (f.exists()) return f
+        }
+        return null
+    }
+
+    // ===== 用户本地导入的自定义模型（JSON 持久化）=====
+    private const val PREFS_NAME = "local_llm_prefs"
+    private const val KEY_CUSTOM = "custom_models"
+
+    fun customModels(context: Context): List<LlmModelEntry> = try {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val arr = org.json.JSONArray(prefs.getString(KEY_CUSTOM, "[]") ?: "[]")
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            LlmModelEntry(
+                id = o.optString("id"),
+                name = o.optString("name"),
+                repo = o.optString("repo", ""),
+                file = o.optString("file"),
+                sizeBytes = o.optLong("sizeBytes"),
+                description = o.optString("description", "本地导入"),
+                localOnly = true,
+            )
+        }.filter { it.id.isNotBlank() && it.file.isNotBlank() }
+    } catch (_: Throwable) { emptyList() }
+
+    fun allModels(context: Context): List<LlmModelEntry> = models + customModels(context)
+
+    fun find(context: Context, id: String): LlmModelEntry? = allModels(context).find { it.id == id }
+
+    fun addCustom(context: Context, entry: LlmModelEntry) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val arr = org.json.JSONArray(prefs.getString(KEY_CUSTOM, "[]") ?: "[]")
+        arr.put(org.json.JSONObject().apply {
+            put("id", entry.id); put("name", entry.name); put("repo", entry.repo)
+            put("file", entry.file); put("sizeBytes", entry.sizeBytes); put("description", entry.description)
+        })
+        prefs.edit().putString(KEY_CUSTOM, arr.toString()).apply()
+    }
+
+    fun removeCustom(context: Context, id: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val kept = customModels(context).filter { it.id != id }
+        val arr = org.json.JSONArray()
+        kept.forEach { e ->
+            arr.put(org.json.JSONObject().apply {
+                put("id", e.id); put("name", e.name); put("repo", e.repo)
+                put("file", e.file); put("sizeBytes", e.sizeBytes); put("description", e.description)
+            })
+        }
+        prefs.edit().putString(KEY_CUSTOM, arr.toString()).apply()
+    }
 }
 
 /**
@@ -154,5 +215,75 @@ class LlmModelDownloader(private val context: Context) {
     fun delete(entry: LlmModelEntry): Boolean {
         val dir = LlmModelRegistry.modelDir(context, entry)
         return dir.deleteRecursively()
+    }
+
+    /**
+     * 从 SAF Uri 导入 .gguf（拷贝到 App 外部存储 llm_models/import_<n>/）。
+     * 返回登记好的条目；失败返回 null。
+     */
+    fun importFromUri(uri: android.net.Uri, displayName: String?): LlmModelEntry? {
+        return try {
+            val resolver = context.contentResolver
+            val size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            if (size <= 0) return null
+            var n = 0
+            var dir: File
+            do { dir = File(context.getExternalFilesDir(null) ?: context.filesDir, "llm_models/import_${n++}") } while (dir.exists())
+            dir.mkdirs()
+            val name = (displayName ?: "model.gguf").ifBlank { "model.gguf" }
+            val dest = File(dir, name)
+            resolver.openInputStream(uri)?.use { input ->
+                java.io.FileOutputStream(dest).use { output -> input.copyTo(output, 1024 * 1024) }
+            } ?: return null
+            val entry = LlmModelEntry(
+                id = dir.name,
+                name = name.removeSuffix(".gguf"),
+                repo = "",
+                file = name,
+                sizeBytes = dest.length(),
+                description = "本地导入（${dest.length() / 1048576}MB）",
+                localOnly = true,
+            )
+            LlmModelRegistry.addCustom(context, entry)
+            entry
+        } catch (e: Throwable) {
+            AppLogger.e(TAG, "importFromUri failed: ${e.message}", e)
+            null
+        }
+    }
+
+    /**
+     * 扫描 Download 目录（含常见子目录）里的 .gguf，直接登记（不拷贝，原文件原地用）。
+     * 返回新登记的数量。
+     */
+    fun scanAndRegisterDownloads(): Int {
+        val roots = listOf(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "Live2D"),
+        )
+        var added = 0
+        for (root in roots) {
+            val files = root.listFiles { f -> f.isFile && f.name.endsWith(".gguf", ignoreCase = true) } ?: continue
+            for (f in files) {
+                val id = "dl_" + f.nameWithoutExtension.hashCode().toUInt().toString()
+                if (LlmModelRegistry.find(context, id) != null) continue
+                // 排除我们下载目录里的文件
+                if (f.absolutePath.contains(context.getExternalFilesDir(null)?.absolutePath ?: "\u0000")) continue
+                LlmModelRegistry.addCustom(
+                    context,
+                    LlmModelEntry(
+                        id = id,
+                        name = f.nameWithoutExtension,
+                        repo = "",
+                        file = f.name,
+                        sizeBytes = f.length(),
+                        description = "Download 扫描（${f.length() / 1048576}MB，原地引用不拷贝）",
+                        localOnly = true,
+                    ),
+                )
+                added++
+            }
+        }
+        return added
     }
 }
