@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/apk/tools">
+    <!-- GenieX SDK 声明 minSdk 27；本 App 目标设备为 8 Elite (Android 15+)，强制覆盖检查 -->
+    <uses-sdk tools:overrideLibrary="com.geniex.sdk" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
