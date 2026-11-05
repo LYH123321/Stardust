@@ -8,7 +8,7 @@
   html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent;}
   #app{width:100%;height:100%;}
   canvas{display:block;}
-  #err{position:fixed;top:8px;left:8px;color:#f87171;font:12px monospace;white-space:pre-wrap;z-index:99;max-width:90%;text-shadow:0 0 3px #000;}
+  #err{display:none;}
 </style>
 </head>
 <body>
@@ -41,7 +41,7 @@ document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30.0, innerWidth/innerHeight, 0.1, 20.0);
-camera.position.set(0, 1.35, 2.2);
+camera.position.set(0, 1.35, 4.0);
 
 const light = new THREE.DirectionalLight(0xffffff, Math.PI);
 light.position.set(1.0, 2.0, 0.5).normalize();
@@ -73,22 +73,10 @@ window.StageAPI = {
       VRMUtils.removeUnnecessaryVertices(gltf.scene);
       VRMUtils.combineSkeletons(gltf.scene);
       v.scene.traverse(o => { o.frustumCulled = false; });
+      // 朝向修正：官方 API，VRM0 自动转到面向镜头
+      try{ VRMUtils.rotateVRM0(v); }catch(e){}
       v.lookAt.target = camera; // 注视镜头
-      // ===== 以下照抄 Airi stage-ui-three/core.ts =====
-      // 朝向修正：用模型自带的 faceFront 把正面转向镜头
-      try {
-        const THREEv = THREE.Vector3, THREEq = THREE.Quaternion;
-        const targetDirection = new THREEv(0, 0, -1);
-        const facing = v.lookAt ? v.lookAt.faceFront : null;
-        if (facing) {
-          const q = new THREEq();
-          q.setFromUnitVectors(facing.clone().normalize(), targetDirection.normalize());
-          v.scene.quaternion.premultiply(q);
-          v.scene.updateMatrixWorld(true);
-        }
-      } catch(e){}
-      try { v.springBoneManager && v.springBoneManager.reset(); } catch(e){}
-      // ===== Airi 抄袭结束 =====
+      try { v.springBoneManager && v.springBoneManager.reset(); }catch(e){}
       scene.add(v.scene);
       vrm = v;
       // 站姿 A-pose 修正：VRM0 需要归一化
