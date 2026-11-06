@@ -68,13 +68,16 @@ class Live2DCoordinator(
         modelBaseScale = prefs.getFloat("model_scale", 1f)
         applyVrmSceneSettings()
     }
-    /** 把 VRM 场景参数推给 WebView（VRM 模式才生效） */
-    fun applyVrmSceneSettings() {
+    /**
+     * 把 VRM 场景参数推给 WebView。
+     * [immediate]=true 时跳过延迟直接推（用于模型已加载完成的回调，
+     * 此时 isVrmMode=true 且 StageAPI 就绪，无需再等 1.2 秒）。
+     */
+    fun applyVrmSceneSettings(immediate: Boolean = false) {
         val view = live2dView ?: return
         fun f(key: String, def: Float) = prefs.getFloat("vrm_$key", def)
         val lookAt = prefs.getString("vrm_lookat", "camera") ?: "camera"
-        // 延迟一点：VRM 舞台可能还在加载
-        view.postDelayed({
+        fun pushAll() {
             view.applyVrmSceneParam("setModelPosition", "${f("posx",0f)},${f("posy",0f)},${f("posz",0f)}")
             view.applyVrmSceneParam("setCameraDistance", "${f("camdist",4f)}")
             view.applyVrmSceneParam("setCameraFov", "${f("camfov",30f)}")
@@ -83,7 +86,9 @@ class Live2DCoordinator(
             view.applyVrmSceneParam("setLightIntensity", "${f("li",2f)}")
             view.applyVrmSceneParam("setAmbientIntensity", "${f("ai",1.57f)}")
             view.applyVrmSceneParam("setLookAtMode", "'$lookAt'")
-        }, 1200)
+        }
+        // 延迟一点：VRM 舞台可能还在加载（启动早期调用时防抖）
+        if (immediate) pushAll() else view.postDelayed({ pushAll() }, 1200)
     }
 
     /** 获取当前模型缩放（0.3 - 3.0） */
@@ -164,6 +169,12 @@ class Live2DCoordinator(
                     val scale = prefs.getFloat("model_scale", 1f)
                     live2dView?.setModelScale(scale.coerceIn(AppConfig.LIVE2D_MODEL_SCALE_MIN, AppConfig.LIVE2D_MODEL_SCALE_MAX))
                     isModelLoaded = true
+                    // VRM 模型：加载完成后再推一次已保存的场景参数。
+                    // loadSettings() 里的那次会在模型就绪前被 isVrmMode=false 短路丢弃，
+                    // 导致朝向/相机/灯光等设置每次重启都回到默认（模型背对用户）。
+                    if (live2dView?.isVrmMode == true) {
+                        applyVrmSceneSettings(immediate = true)
+                    }
                     // 刷新皮套命中范围：让全屏 WebView 只吃掉落在皮套上的触摸，
                     // 其余放行给聊天列表和输入栏（见 Live2DWebView.onTouchEvent）
                     live2dView?.postDelayed({ live2dView?.refreshModelHitRect() }, 250L)
