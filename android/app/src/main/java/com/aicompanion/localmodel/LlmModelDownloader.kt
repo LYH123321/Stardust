@@ -31,6 +31,46 @@ object LlmModelRegistry {
             sizeBytes = 545_259_520L,
             description = "最小测试模型，链路验证用",
         ),
+        LlmModelEntry(
+            id = "qwen3-17b-q4",
+            name = "Qwen3 1.7B (Q4_0, ~1.0GB)",
+            repo = "unsloth/Qwen3-1.7B-GGUF",
+            file = "Qwen3-1.7B-Q4_0.gguf",
+            sizeBytes = 1_056_782_912L,
+            description = "轻量日常聊天，速度飞快，内存占用最低",
+        ),
+        LlmModelEntry(
+            id = "ministral-3b-q4",
+            name = "Ministral 3B Instruct (Q4_0, ~1.9GB)",
+            repo = "unsloth/Ministral-3-3B-Instruct-2512-GGUF",
+            file = "Ministral-3-3B-Instruct-2512-Q4_0.gguf",
+            sizeBytes = 2_046_375_200L,
+            description = "日常聊天主力推荐，质量/速度/发热均衡",
+        ),
+        LlmModelEntry(
+            id = "gemma4-e2b-qat",
+            name = "Gemma 4 E2B (QAT Q4_0, ~3.1GB)",
+            repo = "google/gemma-4-E2B-it-qat-q4_0-gguf",
+            file = "gemma-4-E2B_q4_0-it.gguf",
+            sizeBytes = 3_349_516_256L,
+            description = "Google 官方 QAT 量化，NPU 亲和度最高",
+        ),
+        LlmModelEntry(
+            id = "gemma4-e4b-qat",
+            name = "Gemma 4 E4B (QAT Q4_0, ~4.8GB)",
+            repo = "google/gemma-4-E4B-it-qat-q4_0-gguf",
+            file = "gemma-4-E4B_q4_0-it.gguf",
+            sizeBytes = 5_154_941_280L,
+            description = "4B 档质量最好，QAT 精度损失最小",
+        ),
+        LlmModelEntry(
+            id = "qwen3-14b-q4",
+            name = "Qwen3 14B (Q4_0, ~8.0GB)",
+            repo = "unsloth/Qwen3-14B-GGUF",
+            file = "Qwen3-14B-Q4_0.gguf",
+            sizeBytes = 8_543_001_984L,
+            description = "本机上限档，贴物理内存运行；加载慢、发热明显，慎用",
+        ),
     )
 
     fun find(id: String): LlmModelEntry? = models.find { it.id == id }
